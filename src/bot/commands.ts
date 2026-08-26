@@ -1,16 +1,69 @@
 import TelegramBot from 'node-telegram-bot-api';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { db, ensureUser, getWallet, upsertSettings, createPosition } from '../db/repo.js';
 import { decryptKeypair } from '../solana/wallet.js';
 import { buyToken } from '../solana/executor.js';
 import { checkTokenSafety } from '../solana/token.js';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { buyKeyboard } from './keyboards.js';
 import { config } from '../config.js';
 
 const connection = new Connection(config.rpcUrl, 'confirmed');
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function registerCommands(bot: TelegramBot) {
-  // ... existing /start, /wallet, /export, /auto, /buy handlers ...
+  bot.onText(/^\/start(.*)$/, async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = String(msg.from.id);
+    const refParam = msg.matches?.[1]?.replace('?', '').split('=')[1];
+    const refCode = refParam || `u_${telegramId}`;
+    await ensureUser(telegramId, refCode, refParam ? `u_${refParam}` : undefined);
+    await bot.sendMessage(chatId, 'Welcome! Use /wallet, /settings, /auto on|off, or paste a CA to buy.');
+  });
+
+  bot.onText(/^\/wallet$/, async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = String(msg.from.id);
+    const user = await ensureUser(telegramId, `u_${telegramId}`);
+    const existing = await getWallet(user.id);
+    if (existing) {
+      await bot.sendMessage(chatId, `Your wallet: ${existing.pubkey}\nUse /export to backup private key.`);
+      return;
+    }
+    const kp = createKeypair();
+    const enc = encryptKeypair(kp);
+    await saveWallet(user.id, kp.publicKey.toBase58(), enc);
+    await bot.sendMessage(chatId, `New wallet created: ${kp.publicKey.toBase58()}\n⚠️ Backup your private key now with /export. Never import your main wallet.`);
+  });
+
+  bot.onText(/^\/export$/, async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = String(msg.from.id);
+    const user = await ensureUser(telegramId, `u_${telegramId}`);
+    const w = await getWallet(user.id);
+    if (!w) return bot.sendMessage(chatId, 'No wallet found. Create one with /wallet.');
+    await bot.sendMessage(chatId, `⚠️ Private key (encrypted base58): ${w.encryptedPrivateKey}\n\nStore it offline and delete this message.`);
+  });
+
+  bot.onText(/^\/auto\s+(on|off)$/i, async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = String(msg.from.id);
+    const user = await ensureUser(telegramId, `u_${telegramId}`);
+    const state = msg.matches![1].toLowerCase() === 'on';
+    await upsertSettings(user.id, { autoTradeEnabled: state });
+    await bot.sendMessage(chatId, `Auto trade: ${state ? 'ON' : 'OFF'}`);
+  });
+
+  bot.onText(/^\/buy\s+([A-Za-z0-9]+)$/, async (msg) => {
+    const chatId = msg.chat.id;
+    const ca = msg.matches![1];
+    await bot.sendMessage(chatId, `Token CA: ${ca}\nChoose buy size:`, { reply_markup: buyKeyboard(ca) });
+  });
+
+  bot.onText(/^([A-Za-z0-9]{32,44})$/, async (msg) => {
+    const chatId = msg.chat.id;
+    const ca = msg.text!;
+    await bot.sendMessage(chatId, `Detected CA: ${ca}\nTap Buy below.`, { reply_markup: buyKeyboard(ca) });
+  });
 
   bot.on('callback_query', async (query) => {
     const data = query.data!;
@@ -34,7 +87,6 @@ export function registerCommands(bot: TelegramBot) {
         return;
       }
 
-      // Safety check
       const safety = await checkTokenSafety(connection, new PublicKey(ca));
       if (!safety.ok) {
         await bot.editMessageText(`⚠️ Safety check failed for ${ca}:\n- ${safety.reasons.join('\n- ')}`, {
@@ -48,7 +100,6 @@ export function registerCommands(bot: TelegramBot) {
       const settings = await upsertSettings(user.id, {});
       const slippage = settings.defaultSlippageBps;
 
-      // Ask for confirmation before spending
       const confirmMarkup: TelegramBot.InlineKeyboardMarkup = {
         inline_keyboard: [
           [{ text: `✅ Confirm Buy ${sizeSol} SOL`, callback_data: `confirm_${ca}_${sizeLamports}` }],
@@ -63,7 +114,11 @@ export function registerCommands(bot: TelegramBot) {
     if (data.startsWith('confirm_')) {
       const [, ca, sizeLamports] = data.split('_');
       const user = await ensureUser(telegramId, `u_${telegramId}`);
-      const wallet = await getWallet(user.id)!;
+      const wallet = await getWallet(user.id);
+      if (!wallet) {
+        await bot.answerCallbackQuery(query.id, { text: 'No wallet found' });
+        return;
+      }
       const kp = decryptKeypair(wallet.encryptedPrivateKey);
       const settings = await upsertSettings(user.id, {});
 
@@ -75,8 +130,8 @@ export function registerCommands(bot: TelegramBot) {
         const sig = await buyToken(kp, ca, Number(sizeLamports), settings.defaultSlippageBps);
         await createPosition({
           userId: user.id, tokenCa: ca,
-          entryAvgLamports: '0', // TODO: derive from quote
-          sizeLamports, dcaPlanJson: '[]', tpLevelsJson: '[]'
+          entryAvgLamports: '0', sizeLamports,
+          dcaPlanJson: '[]', tpLevelsJson: '[]'
         });
         await bot.sendMessage(chatId, `✅ Bought ${ca}\nTx: ${sig}\n\nUse /tp and /sl to set exits.`);
       } catch (e: any) {
