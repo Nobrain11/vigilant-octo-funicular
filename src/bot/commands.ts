@@ -1,7 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { db, ensureUser, getWallet, upsertSettings, createPosition } from '../db/repo.js';
-import { decryptKeypair } from '../solana/wallet.js';
+import { createKeypair, encryptKeypair, decryptKeypair, saveWallet } from '../solana/wallet.js';
 import { buyToken } from '../solana/executor.js';
 import { checkTokenSafety } from '../solana/token.js';
 import { buyKeyboard } from './keyboards.js';
@@ -11,16 +11,18 @@ const connection = new Connection(config.rpcUrl, 'confirmed');
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function registerCommands(bot: TelegramBot) {
-  bot.onText(/^\/start(.*)$/, async (msg) => {
+  bot.onText(/^\/start(.*)$/, async (msg, match) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
     const telegramId = String(msg.from.id);
-    const refParam = msg.matches?.[1]?.replace('?', '').split('=')[1];
+    const refParam = match?.[1]?.replace('?', '').split('=')[1];
     const refCode = refParam || `u_${telegramId}`;
     await ensureUser(telegramId, refCode, refParam ? `u_${refParam}` : undefined);
     await bot.sendMessage(chatId, 'Welcome! Use /wallet, /settings, /auto on|off, or paste a CA to buy.');
   });
 
   bot.onText(/^\/wallet$/, async (msg) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
     const telegramId = String(msg.from.id);
     const user = await ensureUser(telegramId, `u_${telegramId}`);
@@ -36,6 +38,7 @@ export function registerCommands(bot: TelegramBot) {
   });
 
   bot.onText(/^\/export$/, async (msg) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
     const telegramId = String(msg.from.id);
     const user = await ensureUser(telegramId, `u_${telegramId}`);
@@ -44,22 +47,25 @@ export function registerCommands(bot: TelegramBot) {
     await bot.sendMessage(chatId, `⚠️ Private key (encrypted base58): ${w.encryptedPrivateKey}\n\nStore it offline and delete this message.`);
   });
 
-  bot.onText(/^\/auto\s+(on|off)$/i, async (msg) => {
+  bot.onText(/^\/auto\s+(on|off)$/i, async (msg, match) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
     const telegramId = String(msg.from.id);
     const user = await ensureUser(telegramId, `u_${telegramId}`);
-    const state = msg.matches![1].toLowerCase() === 'on';
+    const state = match![1].toLowerCase() === 'on';
     await upsertSettings(user.id, { autoTradeEnabled: state });
     await bot.sendMessage(chatId, `Auto trade: ${state ? 'ON' : 'OFF'}`);
   });
 
-  bot.onText(/^\/buy\s+([A-Za-z0-9]+)$/, async (msg) => {
+  bot.onText(/^\/buy\s+([A-Za-z0-9]+)$/, async (msg, match) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
-    const ca = msg.matches![1];
+    const ca = match![1];
     await bot.sendMessage(chatId, `Token CA: ${ca}\nChoose buy size:`, { reply_markup: buyKeyboard(ca) });
   });
 
   bot.onText(/^([A-Za-z0-9]{32,44})$/, async (msg) => {
+    if (!msg.from) return;
     const chatId = msg.chat.id;
     const ca = msg.text!;
     await bot.sendMessage(chatId, `Detected CA: ${ca}\nTap Buy below.`, { reply_markup: buyKeyboard(ca) });
