@@ -1,0 +1,41 @@
+import { db } from '../db/repo.js';
+import { getWallet } from '../db/repo.js';
+import { decryptKeypair } from '../solana/wallet.js';
+import { sellToken } from '../solana/executor.js';
+import { getPrice } from '../solana/price.js'; // implement: fetch current price via Jupiter/RPC
+
+export async function runTpSlEngine() {
+  const positions = await db.selectFrom('positions')
+    .where('status', '=', 'OPEN')
+    .selectAll().execute();
+
+  for (const pos of positions) {
+    const price = await getPrice(pos.tokenCa);
+    if (!price) continue;
+
+    const tpLevels = JSON.parse(pos.tp_levels) as { price: number; pct: number }[];
+    const slPrice = pos.sl_level_price ? Number(pos.sl_level_price) : undefined;
+
+    // Stop loss
+    if (slPrice && price <= slPrice) {
+      const wallet = await getWallet(pos.user_id);
+      if (!wallet) continue;
+      const kp = decryptKeypair(wallet.encryptedPrivateKey);
+      const amount = await getTokenBalance(kp.publicKey, pos.token_ca); // implement
+      await sellToken(kp, pos.token_ca, amount, 100);
+      await db.updateTable('positions').set({ status: 'STOPPED' }).where('id', '=', pos.id).execute();
+      continue;
+    }
+
+    // Take profit tranches
+    for (const tp of tpLevels) {
+      if (price >= tp.price) {
+        const wallet = await getWallet(pos.user_id);
+        if (!wallet) continue;
+        const kp = decryptKeypair(wallet.encryptedPrivateKey);
+        const amount = await getTokenBalance(kp.publicKey, pos.token_ca);
+        await sellToken(kp, pos.token_ca, Math.floor(amount * tp.pct / 100), 100);
+      }
+    }
+  }
+}
