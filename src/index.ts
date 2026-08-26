@@ -12,10 +12,15 @@ const bot = new TelegramBot(config.tgBotToken, { polling: true });
 registerCommands(bot);
 registerHandlers(bot);
 
-// Engines (run on intervals)
-setInterval(runDcaEngine, 10000);
-setInterval(runLimitEngine, 10000);
-setInterval(runTpSlEngine, 10000);
-setInterval(runHunter, 15000);
+function safe(fn: () => Promise<void>) {
+  return async () => {
+    try { await fn(); } catch (e) { console.error('Engine error:', e); }
+  };
+}
+
+setInterval(safe(runDcaEngine), 10_000);
+setInterval(safe(runLimitEngine), 10_000);
+setInterval(safe(runTpSlEngine), 10_000);
+setInterval(safe(runHunter), 15_000);
 
 console.log('Bot is running...');
