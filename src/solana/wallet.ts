@@ -1,4 +1,5 @@
 import { Keypair } from '@solana/web3.js';
+import bs58 from 'bs58';
 import { encryptPrivateKey, decryptPrivateKey } from '../security/crypto.js';
 import { config } from '../config.js';
 
