@@ -1,9 +1,9 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { Connection, PublicKey } from '@solana/web3.js';
 import {
-  db,
   ensureUser,
   getWallet,
+  saveWallet,
   upsertSettings,
   createPosition
 } from '../db/repo.js';
@@ -18,16 +18,23 @@ import { buyKeyboard } from './keyboards.js';
 import { config } from '../config.js';
 
 const connection = new Connection(config.rpcUrl, 'confirmed');
+
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function registerCommands(bot: TelegramBot) {
+  // =========================
+  // /start
+  // =========================
   bot.onText(/^\/start(.*)$/, async (msg, match) => {
     if (!msg.from) return;
 
     const chatId = msg.chat.id;
     const telegramId = String(msg.from.id);
 
-    const refParam = match?.[1]?.replace('?', '').split('=')[1];
+    const refParam = match?.[1]
+      ?.replace('?', '')
+      .split('=')[1];
+
     const refCode = refParam || `u_${telegramId}`;
 
     await ensureUser(
@@ -42,6 +49,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // /wallet
+  // =========================
   bot.onText(/^\/wallet$/, async (msg) => {
     if (!msg.from) return;
 
@@ -64,23 +74,14 @@ export function registerCommands(bot: TelegramBot) {
     }
 
     const kp = createKeypair();
-    const enc = encryptKeypair(kp);
+    const encryptedPrivateKey = encryptKeypair(kp);
     const pubkey = kp.publicKey.toBase58();
 
-    /*
-     * Save wallet directly through the database.
-     *
-     * This replaces the nonexistent saveWallet() function
-     * that was previously imported from ../solana/wallet.js.
-     */
-    await db
-      .insertInto('wallets')
-      .values({
-        user_id: user.id,
-        pubkey,
-        encrypted_private_key: enc
-      })
-      .execute();
+    await saveWallet(
+      user.id,
+      pubkey,
+      encryptedPrivateKey
+    );
 
     await bot.sendMessage(
       chatId,
@@ -88,6 +89,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // /export
+  // =========================
   bot.onText(/^\/export$/, async (msg) => {
     if (!msg.from) return;
 
@@ -115,6 +119,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // /auto on|off
+  // =========================
   bot.onText(/^\/auto\s+(on|off)$/i, async (msg, match) => {
     if (!msg.from) return;
 
@@ -139,6 +146,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // /buy <CA>
+  // =========================
   bot.onText(/^\/buy\s+([A-Za-z0-9]+)$/, async (msg, match) => {
     if (!msg.from) return;
 
@@ -154,6 +164,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // Raw CA detection
+  // =========================
   bot.onText(/^([A-Za-z0-9]{32,44})$/, async (msg) => {
     if (!msg.from) return;
 
@@ -169,6 +182,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
+  // =========================
+  // Callback queries
+  // =========================
   bot.on('callback_query', async (query) => {
     if (!query.data || !query.message) {
       return;
@@ -179,6 +195,9 @@ export function registerCommands(bot: TelegramBot) {
     const messageId = query.message.message_id;
     const telegramId = String(query.from.id);
 
+    // =========================
+    // BUY BUTTON
+    // =========================
     if (data.startsWith('buy_')) {
       const parts = data.split('_');
 
@@ -200,6 +219,7 @@ export function registerCommands(bot: TelegramBot) {
             message_id: messageId
           }
         );
+
         return;
       }
 
@@ -214,6 +234,7 @@ export function registerCommands(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: 'Create a wallet first with /wallet'
         });
+
         return;
       }
 
@@ -225,6 +246,7 @@ export function registerCommands(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: 'Invalid Solana token address'
         });
+
         return;
       }
 
@@ -241,6 +263,7 @@ export function registerCommands(bot: TelegramBot) {
             message_id: messageId
           }
         );
+
         return;
       }
 
@@ -253,6 +276,7 @@ export function registerCommands(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: 'Invalid buy size'
         });
+
         return;
       }
 
@@ -273,13 +297,15 @@ export function registerCommands(bot: TelegramBot) {
           [
             {
               text: `✅ Confirm Buy ${sizeSol} SOL`,
-              callback_data: `confirm_${ca}_${sizeLamports}`
+              callback_data:
+                `confirm_${ca}_${sizeLamports}`
             }
           ],
           [
             {
               text: 'Cancel',
-              callback_data: `cancel_${ca}`
+              callback_data:
+                `cancel_${ca}`
             }
           ]
         ]
@@ -297,6 +323,9 @@ export function registerCommands(bot: TelegramBot) {
       return;
     }
 
+    // =========================
+    // CANCEL
+    // =========================
     if (data.startsWith('cancel_')) {
       await bot.editMessageText(
         'Buy cancelled.',
@@ -309,6 +338,9 @@ export function registerCommands(bot: TelegramBot) {
       return;
     }
 
+    // =========================
+    // CONFIRM BUY
+    // =========================
     if (data.startsWith('confirm_')) {
       const parts = data.split('_');
 
@@ -319,6 +351,7 @@ export function registerCommands(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: 'Invalid confirmation'
         });
+
         return;
       }
 
@@ -333,15 +366,20 @@ export function registerCommands(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: 'No wallet found'
         });
+
         return;
       }
 
       const lamports = Number(sizeLamports);
 
-      if (!Number.isSafeInteger(lamports) || lamports <= 0) {
+      if (
+        !Number.isSafeInteger(lamports) ||
+        lamports <= 0
+      ) {
         await bot.answerCallbackQuery(query.id, {
           text: 'Invalid buy amount'
         });
+
         return;
       }
 
@@ -383,11 +421,11 @@ export function registerCommands(bot: TelegramBot) {
           chatId,
           `✅ Bought ${ca}\nTx: ${sig}\n\nUse /tp and /sl to set exits.`
         );
-      } catch (e: unknown) {
+      } catch (error: unknown) {
         const message =
-          e instanceof Error
-            ? e.message
-            : String(e);
+          error instanceof Error
+            ? error.message
+            : String(error);
 
         await bot.sendMessage(
           chatId,
