@@ -9,7 +9,7 @@ function getEncryptionKey(): Uint8Array {
 
   if (!secret) {
     throw new Error(
-      'WALLET_ENCRYPTION_KEY is missing. Set it in Railway Variables.'
+      'WALLET_ENCRYPTION_KEY is missing. Add it to Railway Variables.'
     );
   }
 
@@ -24,8 +24,13 @@ function getEncryptionKey(): Uint8Array {
   return new Uint8Array(key);
 }
 
-export function encryptPrivateKey(privateKey: Uint8Array): string {
-  const key = getEncryptionKey();
+export function encryptPrivateKey(
+  privateKey: Uint8Array,
+  secret?: string
+): string {
+  const key = secret
+    ? getKeyFromSecret(secret)
+    : getEncryptionKey();
 
   const nonce = nacl.randomBytes(NONCE_BYTES);
 
@@ -41,20 +46,29 @@ export function encryptPrivateKey(privateKey: Uint8Array): string {
   ].join('.');
 }
 
-export function decryptPrivateKey(value: string): Uint8Array {
-  const key = getEncryptionKey();
+export function decryptPrivateKey(
+  value: string,
+  secret?: string
+): Uint8Array {
+  const key = secret
+    ? getKeyFromSecret(secret)
+    : getEncryptionKey();
 
   const parts = value.split('.');
 
   if (parts.length !== 2) {
-    throw new Error('Invalid encrypted private key format.');
+    throw new Error(
+      'Invalid encrypted private key format.'
+    );
   }
 
   const nonce = Buffer.from(parts[0], 'base64');
   const encrypted = Buffer.from(parts[1], 'base64');
 
   if (nonce.length !== NONCE_BYTES) {
-    throw new Error('Invalid encryption nonce.');
+    throw new Error(
+      'Invalid encryption nonce.'
+    );
   }
 
   const decrypted = nacl.secretbox.open(
@@ -72,6 +86,22 @@ export function decryptPrivateKey(value: string): Uint8Array {
   return new Uint8Array(decrypted);
 }
 
+function getKeyFromSecret(
+  secret: string
+): Uint8Array {
+  const key = Buffer.from(secret, 'base64');
+
+  if (key.length !== KEY_BYTES) {
+    throw new Error(
+      `Encryption key must decode to exactly 32 bytes; received ${key.length} bytes.`
+    );
+  }
+
+  return new Uint8Array(key);
+}
+
 export function generateEncryptionKey(): string {
-  return crypto.randomBytes(KEY_BYTES).toString('base64');
+  return crypto
+    .randomBytes(KEY_BYTES)
+    .toString('base64');
 }
