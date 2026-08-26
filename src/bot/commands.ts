@@ -17,14 +17,17 @@ import { checkTokenSafety } from '../solana/token.js';
 import { buyKeyboard } from './keyboards.js';
 import { config } from '../config.js';
 
-const connection = new Connection(config.rpcUrl, 'confirmed');
+const connection = new Connection(
+  config.rpcUrl,
+  'confirmed'
+);
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function registerCommands(bot: TelegramBot) {
-  // =========================
+  // ==============================
   // /start
-  // =========================
+  // ==============================
   bot.onText(/^\/start(.*)$/, async (msg, match) => {
     if (!msg.from) return;
 
@@ -35,12 +38,15 @@ export function registerCommands(bot: TelegramBot) {
       ?.replace('?', '')
       .split('=')[1];
 
-    const refCode = refParam || `u_${telegramId}`;
+    const refCode =
+      refParam || `u_${telegramId}`;
 
     await ensureUser(
       telegramId,
       refCode,
-      refParam ? `u_${refParam}` : undefined
+      refParam
+        ? `u_${refParam}`
+        : undefined
     );
 
     await bot.sendMessage(
@@ -49,9 +55,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
-  // =========================
+  // ==============================
   // /wallet
-  // =========================
+  // ==============================
   bot.onText(/^\/wallet$/, async (msg) => {
     if (!msg.from) return;
 
@@ -63,7 +69,9 @@ export function registerCommands(bot: TelegramBot) {
       `u_${telegramId}`
     );
 
-    const existing = await getWallet(user.id);
+    const existing = await getWallet(
+      user.id
+    );
 
     if (existing) {
       await bot.sendMessage(
@@ -74,8 +82,12 @@ export function registerCommands(bot: TelegramBot) {
     }
 
     const kp = createKeypair();
-    const encryptedPrivateKey = encryptKeypair(kp);
-    const pubkey = kp.publicKey.toBase58();
+
+    const encryptedPrivateKey =
+      encryptKeypair(kp);
+
+    const pubkey =
+      kp.publicKey.toBase58();
 
     await saveWallet(
       user.id,
@@ -89,9 +101,9 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
-  // =========================
+  // ==============================
   // /export
-  // =========================
+  // ==============================
   bot.onText(/^\/export$/, async (msg) => {
     if (!msg.from) return;
 
@@ -103,7 +115,9 @@ export function registerCommands(bot: TelegramBot) {
       `u_${telegramId}`
     );
 
-    const wallet = await getWallet(user.id);
+    const wallet = await getWallet(
+      user.id
+    );
 
     if (!wallet) {
       await bot.sendMessage(
@@ -119,99 +133,267 @@ export function registerCommands(bot: TelegramBot) {
     );
   });
 
-  // =========================
+  // ==============================
   // /auto on|off
-  // =========================
-  bot.onText(/^\/auto\s+(on|off)$/i, async (msg, match) => {
-    if (!msg.from) return;
+  // ==============================
+  bot.onText(
+    /^\/auto\s+(on|off)$/i,
+    async (msg, match) => {
+      if (!msg.from) return;
 
-    const chatId = msg.chat.id;
-    const telegramId = String(msg.from.id);
+      const chatId = msg.chat.id;
+      const telegramId =
+        String(msg.from.id);
 
-    const user = await ensureUser(
-      telegramId,
-      `u_${telegramId}`
-    );
+      const user = await ensureUser(
+        telegramId,
+        `u_${telegramId}`
+      );
 
-    const state =
-      match![1].toLowerCase() === 'on';
+      const state =
+        match![1].toLowerCase() === 'on';
 
-    await upsertSettings(user.id, {
-      autoTradeEnabled: state
-    });
+      await upsertSettings(
+        user.id,
+        {
+          autoTradeEnabled: state
+        }
+      );
 
-    await bot.sendMessage(
-      chatId,
-      `Auto trade: ${state ? 'ON' : 'OFF'}`
-    );
-  });
-
-  // =========================
-  // /buy <CA>
-  // =========================
-  bot.onText(/^\/buy\s+([A-Za-z0-9]+)$/, async (msg, match) => {
-    if (!msg.from) return;
-
-    const chatId = msg.chat.id;
-    const ca = match![1];
-
-    await bot.sendMessage(
-      chatId,
-      `Token CA: ${ca}\nChoose buy size:`,
-      {
-        reply_markup: buyKeyboard(ca)
-      }
-    );
-  });
-
-  // =========================
-  // Raw CA detection
-  // =========================
-  bot.onText(/^([A-Za-z0-9]{32,44})$/, async (msg) => {
-    if (!msg.from) return;
-
-    const chatId = msg.chat.id;
-    const ca = msg.text!;
-
-    await bot.sendMessage(
-      chatId,
-      `Detected CA: ${ca}\nTap Buy below.`,
-      {
-        reply_markup: buyKeyboard(ca)
-      }
-    );
-  });
-
-  // =========================
-  // Callback queries
-  // =========================
-  bot.on('callback_query', async (query) => {
-    if (!query.data || !query.message) {
-      return;
+      await bot.sendMessage(
+        chatId,
+        `Auto trade: ${state ? 'ON' : 'OFF'}`
+      );
     }
+  );
 
-    const data = query.data;
-    const chatId = query.message.chat.id;
-    const messageId = query.message.message_id;
-    const telegramId = String(query.from.id);
+  // ==============================
+  // /buy <CA>
+  // ==============================
+  bot.onText(
+    /^\/buy\s+([A-Za-z0-9]+)$/,
+    async (msg, match) => {
+      if (!msg.from) return;
 
-    // =========================
-    // BUY BUTTON
-    // =========================
-    if (data.startsWith('buy_')) {
-      const parts = data.split('_');
+      const chatId = msg.chat.id;
+      const ca = match![1];
 
-      const ca = parts[1];
-      const sizeLabel = parts[2];
+      await bot.sendMessage(
+        chatId,
+        `Token CA: ${ca}\nChoose buy size:`,
+        {
+          reply_markup: buyKeyboard(ca)
+        }
+      );
+    }
+  );
 
-      if (!ca || !sizeLabel) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Invalid buy request'
-        });
+  // ==============================
+  // Detect pasted Solana CA
+  // ==============================
+  bot.onText(
+    /^([A-Za-z0-9]{32,44})$/,
+    async (msg) => {
+      if (!msg.from) return;
+
+      const chatId = msg.chat.id;
+      const ca = msg.text!;
+
+      await bot.sendMessage(
+        chatId,
+        `Detected CA: ${ca}\nTap Buy below.`,
+        {
+          reply_markup: buyKeyboard(ca)
+        }
+      );
+    }
+  );
+
+  // ==============================
+  // Callback queries
+  // ==============================
+  bot.on(
+    'callback_query',
+    async (query) => {
+      if (
+        !query.data ||
+        !query.message
+      ) {
         return;
       }
 
-      if (sizeLabel === 'cancel') {
+      const data = query.data;
+
+      const chatId =
+        query.message.chat.id;
+
+      const messageId =
+        query.message.message_id;
+
+      const telegramId =
+        String(query.from.id);
+
+      // ============================
+      // BUY SIZE
+      // ============================
+      if (data.startsWith('buy_')) {
+        const parts =
+          data.split('_');
+
+        const ca = parts[1];
+        const sizeLabel = parts[2];
+
+        if (!ca || !sizeLabel) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Invalid buy request'
+            }
+          );
+          return;
+        }
+
+        if (sizeLabel === 'cancel') {
+          await bot.editMessageText(
+            'Buy cancelled.',
+            {
+              chat_id: chatId,
+              message_id: messageId
+            }
+          );
+
+          return;
+        }
+
+        const user =
+          await ensureUser(
+            telegramId,
+            `u_${telegramId}`
+          );
+
+        const wallet =
+          await getWallet(user.id);
+
+        if (!wallet) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Create a wallet first with /wallet'
+            }
+          );
+
+          return;
+        }
+
+        let tokenPublicKey: PublicKey;
+
+        try {
+          tokenPublicKey =
+            new PublicKey(ca);
+        } catch {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Invalid Solana token address'
+            }
+          );
+
+          return;
+        }
+
+        // ==========================
+        // TOKEN SAFETY CHECK
+        // ==========================
+        const safety =
+          await checkTokenSafety(
+            connection,
+            tokenPublicKey
+          );
+
+        if (!safety.ok) {
+          await bot.editMessageText(
+            `⚠️ Safety check failed for ${ca}:\n- ${safety.reasons.join('\n- ')}`,
+            {
+              chat_id: chatId,
+              message_id: messageId
+            }
+          );
+
+          return;
+        }
+
+        const sizeSol =
+          sizeLabel === 'custom'
+            ? 0.1
+            : parseFloat(sizeLabel);
+
+        if (
+          !Number.isFinite(sizeSol) ||
+          sizeSol <= 0
+        ) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Invalid buy size'
+            }
+          );
+
+          return;
+        }
+
+        const sizeLamports =
+          Math.floor(
+            sizeSol *
+            LAMPORTS_PER_SOL
+          );
+
+        const settings =
+          await upsertSettings(
+            user.id,
+            {}
+          );
+
+        const slippage =
+          settings.defaultSlippageBps;
+
+        const confirmMarkup: TelegramBot.InlineKeyboardMarkup =
+          {
+            inline_keyboard: [
+              [
+                {
+                  text:
+                    `✅ Confirm Buy ${sizeSol} SOL`,
+                  callback_data:
+                    `confirm_${ca}_${sizeLamports}`
+                }
+              ],
+              [
+                {
+                  text: 'Cancel',
+                  callback_data:
+                    `cancel_${ca}`
+                }
+              ]
+            ]
+          };
+
+        await bot.editMessageText(
+          `Buy ${sizeSol} SOL of ${ca}?\nSlippage: ${slippage / 100}%`,
+          {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup:
+              confirmMarkup
+          }
+        );
+
+        return;
+      }
+
+      // ============================
+      // CANCEL
+      // ============================
+      if (data.startsWith('cancel_')) {
         await bot.editMessageText(
           'Buy cancelled.',
           {
@@ -223,217 +405,136 @@ export function registerCommands(bot: TelegramBot) {
         return;
       }
 
-      const user = await ensureUser(
-        telegramId,
-        `u_${telegramId}`
-      );
+      // ============================
+      // CONFIRM BUY
+      // ============================
+      if (
+        data.startsWith('confirm_')
+      ) {
+        const parts =
+          data.split('_');
 
-      const wallet = await getWallet(user.id);
+        const ca = parts[1];
+        const sizeLamports =
+          parts[2];
 
-      if (!wallet) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Create a wallet first with /wallet'
-        });
+        if (
+          !ca ||
+          !sizeLamports
+        ) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Invalid confirmation'
+            }
+          );
 
-        return;
-      }
+          return;
+        }
 
-      let tokenPublicKey: PublicKey;
+        const user =
+          await ensureUser(
+            telegramId,
+            `u_${telegramId}`
+          );
 
-      try {
-        tokenPublicKey = new PublicKey(ca);
-      } catch {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Invalid Solana token address'
-        });
+        const wallet =
+          await getWallet(user.id);
 
-        return;
-      }
+        if (!wallet) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'No wallet found'
+            }
+          );
 
-      const safety = await checkTokenSafety(
-        connection,
-        tokenPublicKey
-      );
+          return;
+        }
 
-      if (!safety.ok) {
+        const lamports =
+          Number(sizeLamports);
+
+        if (
+          !Number.isSafeInteger(
+            lamports
+          ) ||
+          lamports <= 0
+        ) {
+          await bot.answerCallbackQuery(
+            query.id,
+            {
+              text: 'Invalid buy amount'
+            }
+          );
+
+          return;
+        }
+
+        const kp =
+          decryptKeypair(
+            wallet.encryptedPrivateKey
+          );
+
+        const settings =
+          await upsertSettings(
+            user.id,
+            {}
+          );
+
+        await bot.answerCallbackQuery(
+          query.id,
+          {
+            text: 'Buy confirmed'
+          }
+        );
+
         await bot.editMessageText(
-          `⚠️ Safety check failed for ${ca}:\n- ${safety.reasons.join('\n- ')}`,
+          `Executing buy of ${lamports / LAMPORTS_PER_SOL} SOL for ${ca}...`,
           {
             chat_id: chatId,
             message_id: messageId
           }
         );
 
-        return;
-      }
+        try {
+          const sig =
+            await buyToken(
+              kp,
+              ca,
+              lamports,
+              settings.defaultSlippageBps
+            );
 
-      const sizeSol =
-        sizeLabel === 'custom'
-          ? 0.1
-          : parseFloat(sizeLabel);
+          await createPosition({
+            userId: user.id,
+            tokenCa: ca,
+            entryAvgLamports: '0',
+            sizeLamports,
+            dcaPlanJson: '[]',
+            tpLevelsJson: '[]'
+          });
 
-      if (!Number.isFinite(sizeSol) || sizeSol <= 0) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Invalid buy size'
-        });
+          await bot.sendMessage(
+            chatId,
+            `✅ Bought ${ca}\nTx: ${sig}\n\nUse /tp and /sl to set exits.`
+          );
+        } catch (
+          error: unknown
+        ) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : String(error);
 
-        return;
-      }
-
-      const sizeLamports = Math.floor(
-        sizeSol * LAMPORTS_PER_SOL
-      );
-
-      const settings = await upsertSettings(
-        user.id,
-        {}
-      );
-
-      const slippage =
-        settings.defaultSlippageBps;
-
-      const confirmMarkup: TelegramBot.InlineKeyboardMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: `✅ Confirm Buy ${sizeSol} SOL`,
-              callback_data:
-                `confirm_${ca}_${sizeLamports}`
-            }
-          ],
-          [
-            {
-              text: 'Cancel',
-              callback_data:
-                `cancel_${ca}`
-            }
-          ]
-        ]
-      };
-
-      await bot.editMessageText(
-        `Buy ${sizeSol} SOL of ${ca}?\nSlippage: ${slippage / 100}%`,
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: confirmMarkup
+          await bot.sendMessage(
+            chatId,
+            `❌ Buy failed: ${message}`
+          );
         }
-      );
-
-      return;
-    }
-
-    // =========================
-    // CANCEL
-    // =========================
-    if (data.startsWith('cancel_')) {
-      await bot.editMessageText(
-        'Buy cancelled.',
-        {
-          chat_id: chatId,
-          message_id: messageId
-        }
-      );
-
-      return;
-    }
-
-    // =========================
-    // CONFIRM BUY
-    // =========================
-    if (data.startsWith('confirm_')) {
-      const parts = data.split('_');
-
-      const ca = parts[1];
-      const sizeLamports = parts[2];
-
-      if (!ca || !sizeLamports) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Invalid confirmation'
-        });
 
         return;
       }
-
-      const user = await ensureUser(
-        telegramId,
-        `u_${telegramId}`
-      );
-
-      const wallet = await getWallet(user.id);
-
-      if (!wallet) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'No wallet found'
-        });
-
-        return;
-      }
-
-      const lamports = Number(sizeLamports);
-
-      if (
-        !Number.isSafeInteger(lamports) ||
-        lamports <= 0
-      ) {
-        await bot.answerCallbackQuery(query.id, {
-          text: 'Invalid buy amount'
-        });
-
-        return;
-      }
-
-      const kp = decryptKeypair(
-        wallet.encryptedPrivateKey
-      );
-
-      const settings = await upsertSettings(
-        user.id,
-        {}
-      );
-
-      await bot.editMessageText(
-        `Executing buy of ${lamports / LAMPORTS_PER_SOL} SOL for ${ca}...`,
-        {
-          chat_id: chatId,
-          message_id: messageId
-        }
-      );
-
-      try {
-        const sig = await buyToken(
-          kp,
-          ca,
-          lamports,
-          settings.defaultSlippageBps
-        );
-
-        await createPosition({
-          userId: user.id,
-          tokenCa: ca,
-          entryAvgLamports: '0',
-          sizeLamports,
-          dcaPlanJson: '[]',
-          tpLevelsJson: '[]'
-        });
-
-        await bot.sendMessage(
-          chatId,
-          `✅ Bought ${ca}\nTx: ${sig}\n\nUse /tp and /sl to set exits.`
-        );
-      } catch (error: unknown) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : String(error);
-
-        await bot.sendMessage(
-          chatId,
-          `❌ Buy failed: ${message}`
-        );
-      }
-
-      return;
     }
-  });
+  );
 }
